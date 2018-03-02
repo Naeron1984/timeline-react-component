@@ -5,7 +5,12 @@ import './App.css';
 
 import Draggable from 'react-draggable'; // The default
 
-class TimelineComponent extends Component { 
+class TimelineComponent extends Component {
+  constructor(props) {
+    super(props);
+    this.handleDrag = this.handleDrag.bind(this);
+  }
+
   render() {
     const headerHeight = 20;
 
@@ -21,10 +26,13 @@ class TimelineComponent extends Component {
     });    
 
     const draggableDivCSSCN = css({
-      //position: 'absolute',
+      background: '#55550055',
+      width: px(500),
+      height: px(500),
     });
 
     const scrollWrapperCSSCN = css({
+      position: 'relative',
       overflowY: 'scroll',
       overflowX: 'hidden',
       height: px(this.props.height-headerHeight)
@@ -36,9 +44,9 @@ class TimelineComponent extends Component {
             Monday, Tuesday, etc.
           </div>
           <div className={scrollWrapperCSSCN}>
-            <Draggable axis="x">
+            <canvas ref="canvas" width={200} height={300} style={{display: 'block', position: 'absolute'}}/>
+            <Draggable axis="x" onDrag={this.handleDrag}>
               <div className={draggableDivCSSCN}>
-                <canvas ref="canvas" width={200} height={300} />
               </div>
             </Draggable>
           </div>
@@ -47,15 +55,24 @@ class TimelineComponent extends Component {
   }
 
   componentDidMount() {
-      this.updateCanvas();
+    this.updateCanvas();
   }
+
   updateCanvas() {
-      const ctx = this.refs.canvas.getContext('2d');
-      ctx.fillStyle='orange';
-      ctx.fillRect(100,0, 100, 100);
-      ctx.fillRect(0,100, 100, 100);
-      ctx.fillRect(100,200, 100, 100);
-  }  
+    var d = new Date();
+    var n = d.getTime();
+    const ctx = this.refs.canvas.getContext('2d');
+    ctx.clearRect(0, 0, this.refs.canvas.width, this.refs.canvas.height);
+    ctx.fillStyle='red';
+    ctx.fillRect(100,0, 100, 100);
+    ctx.fillRect(0,100, 100, n/100 % 100);
+    ctx.fillRect(100,200, 100, 100);
+  }
+
+  handleDrag() {
+    this.updateCanvas();
+    console.log("drag");
+  }
 }
 
 class App extends Component {
@@ -92,4 +109,17 @@ function px(valueInt){
   return valueInt+'px';
 }
 
+function translate(x,y){
+  return `translate(${x}px, ${y}px)`;
+}
+
 export default App;
+
+/*
+REFACTORING:
+  css is not very good
+TASK NEXT:
+  canvas dynamic calculation and drawing
+  draggable div vs manual event positioning solution
+  zoom
+*/
