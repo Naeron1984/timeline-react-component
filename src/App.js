@@ -2,13 +2,24 @@ import React, { Component } from 'react';
 import classNames from 'classnames'
 import { css } from 'emotion'
 import './App.css';
-
-import Draggable from 'react-draggable'; // The default
+import {DraggableCore} from 'react-draggable';
+import {List} from 'immutable';
+import { DateTime } from 'luxon';
+import { Duration } from 'luxon';
+import { Interval } from 'luxon';
 
 class TimelineComponent extends Component {
   constructor(props) {
     super(props);
     this.handleDrag = this.handleDrag.bind(this);
+    
+    //States
+    this.state = {
+      translateX: null      
+    },    
+    this.timeDelimeters = List();;
+    this.baseDate = DateTime.local();
+    this.daysToPixel = 200; //the zoom level
   }
 
   render() {
@@ -26,9 +37,9 @@ class TimelineComponent extends Component {
     });    
 
     const draggableDivCSSCN = css({
-      background: '#55550055',
+      background: '#00000021',
       width: px(500),
-      height: px(500),
+      height: px(100),
     });
 
     const scrollWrapperCSSCN = css({
@@ -43,35 +54,90 @@ class TimelineComponent extends Component {
           <div className={headerDivCSSCN}>
             Monday, Tuesday, etc.
           </div>
-          <div className={scrollWrapperCSSCN}>
-            <canvas ref="canvas" width={200} height={300} style={{display: 'block', position: 'absolute'}}/>
-            <Draggable axis="x" onDrag={this.handleDrag}>
-              <div className={draggableDivCSSCN}>
+          <div className={scrollWrapperCSSCN} ref="scrollWrapper">            
+            <DraggableCore axis="x" onDrag={this.handleDrag}>
+              <div className={draggableDivCSSCN} style={this.getDraggableStyle()} ref="draggableDiv">
+                <canvas ref="canvas" width={200} height={300} style={{display: 'block', position: 'absolute'}}/>
               </div>
-            </Draggable>
+            </DraggableCore>
           </div>
         </div>
     );
   }
 
   componentDidMount() {
+    this.refs.canvas.width = this.refs.scrollWrapper.clientWidth * 3;
+    this.refs.draggableDiv.style.width = this.refs.scrollWrapper.clientWidth * 3 + "px";
+    this.setState({translateX: -this.refs.scrollWrapper.clientWidth});
+    this.calculateIntervals();
     this.updateCanvas();
   }
 
   updateCanvas() {
-    var d = new Date();
-    var n = d.getTime();
     const ctx = this.refs.canvas.getContext('2d');
     ctx.clearRect(0, 0, this.refs.canvas.width, this.refs.canvas.height);
     ctx.fillStyle='red';
-    ctx.fillRect(100,0, 100, 100);
-    ctx.fillRect(0,100, 100, n/100 % 100);
-    ctx.fillRect(100,200, 100, 100);
+    for (var deli of this.timeDelimeters){
+      ctx.beginPath();
+      ctx.moveTo(deli.deliX,0);
+      ctx.lineTo(deli.deliX,350);
+      ctx.stroke();
+      ctx.closePath();
+      ctx.font = "20px Arial";
+      ctx.fillText(deli.dateTime.toLocaleString(DateTime.DATE_SHORT),deli.deliX,21);
+    }
   }
 
-  handleDrag() {
-    this.updateCanvas();
-    console.log("drag");
+  calculateIntervals() {
+    this.timeDelimeters = List();
+    
+    let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
+    let canvasLeftDate = this.baseDate.minus(oneScreenWidthInDuration);
+    let leftToFirstDayStart = Interval.fromDateTimes(canvasLeftDate,canvasLeftDate.plus({ days: 1 }).startOf('day'));
+    let firstLineX = this.durationToPx(leftToFirstDayStart.toDuration());
+
+    let sum = firstLineX;
+    let dateAct = canvasLeftDate.plus({ days: 1 }).startOf('day');
+
+
+    while(true){
+      if(sum > this.refs.canvas.width){
+        break;
+      }
+
+      
+      this.timeDelimeters = this.timeDelimeters.push({deliX: sum, dateTime: dateAct});
+      sum+=this.daysToPixel;
+      dateAct = dateAct.plus({ days: 1 });
+    }
+  }
+
+  handleDrag(e,data) {
+    this.setState((prevState,props) => {
+      var newTranslateXCandidate = prevState.translateX + data.deltaX;
+      var duration = this.pxToDuration(data.deltaX);
+      this.baseDate = this.baseDate.minus(duration);
+
+      if(newTranslateXCandidate< 2*(-this.refs.scrollWrapper.clientWidth) || newTranslateXCandidate > 0){
+        newTranslateXCandidate = -this.refs.scrollWrapper.clientWidth;
+    
+        this.calculateIntervals();
+        this.updateCanvas();
+      }
+      return {translateX: newTranslateXCandidate};
+    });
+  }
+
+  getDraggableStyle(){
+    return { transform: translate(this.state.translateX,0) };
+  }
+
+  durationToPx(duration){
+    return millisecondsToDays(duration.milliseconds) * this.daysToPixel;
+  }
+
+  pxToDuration(px){
+    return Duration.fromObject({milliseconds: daysToMilliseconds(px / this.daysToPixel)});
   }
 }
 
@@ -113,11 +179,20 @@ function translate(x,y){
   return `translate(${x}px, ${y}px)`;
 }
 
+function daysToMilliseconds(days){
+  return days * 86400000;
+}
+
+function millisecondsToDays(ms){
+  return ms / 86400000;
+}
+
 export default App;
 
 /*
 REFACTORING:
   css is not very good
+  tooling is subpar - CRA has a good desc. on how to set up VSCode 
 TASK NEXT:
   canvas dynamic calculation and drawing
   draggable div vs manual event positioning solution

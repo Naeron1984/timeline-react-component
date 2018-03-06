@@ -5,6 +5,8 @@
   "dependencies": {
     "classnames": "^2.2.5",
     "emotion": "^9.0.2",
+    "immutable": "^3.8.2",
+    "luxon": "^0.5.3",
     "react": "^16.2.0",
     "react-dom": "^16.2.0",
     "react-draggable": "^3.0.5",
