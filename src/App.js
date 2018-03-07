@@ -14,6 +14,8 @@ import { DateTime } from 'luxon';
 import { Duration } from 'luxon';
 import { Interval } from 'luxon';
 
+import EventSocket from './eventSocket.js';
+
 class TimelineComponent extends Component {
   constructor(props) {
     super(props);
@@ -27,6 +29,13 @@ class TimelineComponent extends Component {
     this.timeDelimeters = List();;
     this.baseDate = DateTime.local();
     this.daysToPixel = 200; //the zoom level
+
+    this.eventSocket = new EventSocket();
+    this.eventSocket.eventSubject.subscribe((data)=>{
+      //TODO: unsubscribe
+      //TODO: check if received events are in the interval
+      console.log(data);
+    });
   }
 
   render() {
@@ -98,6 +107,8 @@ class TimelineComponent extends Component {
     
         this.calculateIntervals();
         this.redrawCanvas();
+
+        this.eventSocket.askForIntervalDuplex();
       }
       return {translateX: newTranslateXCandidate};
     });
