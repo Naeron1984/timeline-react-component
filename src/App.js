@@ -1,9 +1,15 @@
+import './App.css';
+
 import React, { Component } from 'react';
 import classNames from 'classnames'
+
 import { css } from 'emotion'
-import './App.css';
+
+import { fromEvent } from 'rxjs/observable/fromEvent';
+
 import {DraggableCore} from 'react-draggable';
 import {List} from 'immutable';
+
 import { DateTime } from 'luxon';
 import { Duration } from 'luxon';
 import { Interval } from 'luxon';
@@ -12,7 +18,8 @@ class TimelineComponent extends Component {
   constructor(props) {
     super(props);
     this.handleDrag = this.handleDrag.bind(this);
-    
+    this.handleResize = this.handleResize.bind(this);
+
     //States
     this.state = {
       translateX: null      
@@ -66,50 +73,18 @@ class TimelineComponent extends Component {
   }
 
   componentDidMount() {
-    this.refs.canvas.width = this.refs.scrollWrapper.clientWidth * 3;
-    this.refs.draggableDiv.style.width = this.refs.scrollWrapper.clientWidth * 3 + "px";
-    this.setState({translateX: -this.refs.scrollWrapper.clientWidth});
-    this.calculateIntervals();
-    this.updateCanvas();
+    this.update();
+
+    this.resizeSubscription = fromEvent(window, 'resize')      
+      .subscribe(this.handleResize);  
   }
 
-  updateCanvas() {
-    const ctx = this.refs.canvas.getContext('2d');
-    ctx.clearRect(0, 0, this.refs.canvas.width, this.refs.canvas.height);
-    ctx.fillStyle='red';
-    for (var deli of this.timeDelimeters){
-      ctx.beginPath();
-      ctx.moveTo(deli.deliX,0);
-      ctx.lineTo(deli.deliX,350);
-      ctx.stroke();
-      ctx.closePath();
-      ctx.font = "20px Arial";
-      ctx.fillText(deli.dateTime.toLocaleString(DateTime.DATE_SHORT),deli.deliX,21);
-    }
+  componentWillUnmount() {
+    this.resizeSubscription.unsubscribe();
   }
 
-  calculateIntervals() {
-    this.timeDelimeters = List();
-    
-    let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
-    let canvasLeftDate = this.baseDate.minus(oneScreenWidthInDuration);
-    let leftToFirstDayStart = Interval.fromDateTimes(canvasLeftDate,canvasLeftDate.plus({ days: 1 }).startOf('day'));
-    let firstLineX = this.durationToPx(leftToFirstDayStart.toDuration());
-
-    let sum = firstLineX;
-    let dateAct = canvasLeftDate.plus({ days: 1 }).startOf('day');
-
-
-    while(true){
-      if(sum > this.refs.canvas.width){
-        break;
-      }
-
-      
-      this.timeDelimeters = this.timeDelimeters.push({deliX: sum, dateTime: dateAct});
-      sum+=this.daysToPixel;
-      dateAct = dateAct.plus({ days: 1 });
-    }
+  handleResize(e) {
+    this.update();
   }
 
   handleDrag(e,data) {
@@ -122,10 +97,55 @@ class TimelineComponent extends Component {
         newTranslateXCandidate = -this.refs.scrollWrapper.clientWidth;
     
         this.calculateIntervals();
-        this.updateCanvas();
+        this.redrawCanvas();
       }
       return {translateX: newTranslateXCandidate};
     });
+  }  
+
+  update() {    
+    this.refs.canvas.width = this.refs.scrollWrapper.clientWidth * 3;
+    this.refs.draggableDiv.style.width = this.refs.scrollWrapper.clientWidth * 3 + "px";
+    this.setState({translateX: -this.refs.scrollWrapper.clientWidth});
+    this.calculateIntervals(-this.refs.scrollWrapper.clientWidth);
+    this.redrawCanvas();
+  }
+
+  calculateIntervals(translateX) {
+    this.timeDelimeters = List();
+    
+    let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
+    let canvasLeftDate = this.baseDate.minus(oneScreenWidthInDuration).plus(this.pxToDuration(translateX+this.refs.scrollWrapper.clientWidth));
+    let leftToFirstDayStart = Interval.fromDateTimes(canvasLeftDate,canvasLeftDate.plus({ days: 1 }).startOf('day'));
+    let firstLineX = this.durationToPx(leftToFirstDayStart.toDuration());
+
+    let sum = firstLineX;
+    let dateAct = canvasLeftDate.plus({ days: 1 }).startOf('day');
+
+    while(true){
+      if(sum > this.refs.canvas.width){
+        break;
+      }
+      
+      this.timeDelimeters = this.timeDelimeters.push({deliX: sum, dateTime: dateAct});
+      sum+=this.daysToPixel;
+      dateAct = dateAct.plus({ days: 1 });
+    }
+  }
+
+  redrawCanvas() {
+    const ctx = this.refs.canvas.getContext('2d');
+    ctx.clearRect(0, 0, this.refs.canvas.width, this.refs.canvas.height);
+    ctx.fillStyle='red';
+    for (var deli of this.timeDelimeters){
+      ctx.beginPath();
+      ctx.moveTo(deli.deliX,0);
+      ctx.lineTo(deli.deliX,350);
+      ctx.stroke();
+      ctx.closePath();
+      ctx.font = "20px Arial";
+      ctx.fillText(deli.dateTime.toLocaleString(DateTime.DATE_SHORT),deli.deliX,21);
+    }
   }
 
   getDraggableStyle(){
@@ -194,7 +214,8 @@ REFACTORING:
   css is not very good
   tooling is subpar - CRA has a good desc. on how to set up VSCode 
 TASK NEXT:
-  canvas dynamic calculation and drawing
-  draggable div vs manual event positioning solution
+  dynamic loading of events - mock?
   zoom
+    buttons
+  header
 */
