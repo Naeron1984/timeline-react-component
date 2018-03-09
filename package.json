@@ -3,8 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "chance": "^1.0.13",
     "classnames": "^2.2.5",
     "emotion": "^9.0.2",
+    "enumify": "^1.0.4",
     "immutable": "^3.8.2",
     "luxon": "^0.5.3",
     "react": "^16.2.0",

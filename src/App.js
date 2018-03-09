@@ -1,5 +1,7 @@
 import './App.css';
 
+import {Enum} from 'enumify';
+
 import React, { Component } from 'react';
 import classNames from 'classnames'
 
@@ -16,6 +18,9 @@ import { Interval } from 'luxon';
 
 import EventSocket from './eventSocket.js';
 
+class EventPreloadState extends Enum {}
+EventPreloadState.initEnum(['NOTLOADED', 'LOADING', 'LOADED', 'ERROR']);
+
 class TimelineComponent extends Component {
   constructor(props) {
     super(props);
@@ -30,12 +35,15 @@ class TimelineComponent extends Component {
     this.baseDate = DateTime.local();
     this.daysToPixel = 200; //the zoom level
 
+    this.pastPreloadState = EventPreloadState.NOTLOADED;
+    this.futurePreloadState = EventPreloadState.NOTLOADED;
+
     this.eventSocket = new EventSocket();
     this.eventSocket.eventSubject.subscribe((data)=>{
       //TODO: unsubscribe
       //TODO: check if received events are in the interval
       console.log(data);
-    });
+    });    
   }
 
   render() {
@@ -85,7 +93,14 @@ class TimelineComponent extends Component {
     this.update();
 
     this.resizeSubscription = fromEvent(window, 'resize')      
-      .subscribe(this.handleResize);  
+      .subscribe(this.handleResize);
+
+    //for now keep it here, and if performance is not good enough then call it before
+    let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
+    let canvasLeftDate = this.baseDate.minus(this.pxToDuration(this.refs.scrollWrapper.clientWidth));
+    let canvaseRightDate = canvasLeftDate.plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration);    
+    this.eventSocket.askForIntervalPastDuplex(canvasLeftDate, canvaseRightDate);
+    this.eventSocket.askForIntervalFutureDuplex(canvasLeftDate, canvaseRightDate);
   }
 
   componentWillUnmount() {
@@ -103,22 +118,42 @@ class TimelineComponent extends Component {
       this.baseDate = this.baseDate.minus(duration);
 
       if(newTranslateXCandidate< 2*(-this.refs.scrollWrapper.clientWidth) || newTranslateXCandidate > 0){
-        newTranslateXCandidate = -this.refs.scrollWrapper.clientWidth;
-    
-        this.calculateIntervals();
-        this.redrawCanvas();
+        console.log("Switching board (future direction).");
 
-        this.eventSocket.askForIntervalDuplex();
+        this.calculateIntervals();
+        this.redrawCanvas();        
+
+
+        return {translateX: -this.refs.scrollWrapper.clientWidth};
+      }else{
+        let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
+        let canvasLeftDate = this.baseDate.minus(this.pxToDuration(this.refs.scrollWrapper.clientWidth + newTranslateXCandidate));
+        let canvaseRightDate = canvasLeftDate.plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration);
+        let futureCanvasRightDate = canvaseRightDate.plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration);
+
+        if(newTranslateXCandidate< 1.5 * (-this.refs.scrollWrapper.clientWidth)){
+          if(this.futurePreloadState == EventPreloadState.NOTLOADED){
+            console.log("Preloading future events...");
+            this.futurePreloadState = EventPreloadState.LOADING;
+            this.eventSocket.askForIntervalFutureDuplex(canvaseRightDate, futureCanvasRightDate);
+          }
+        }
+
+        if(newTranslateXCandidate > 0.5 * (this.refs.scrollWrapper.clientWidth)){
+          //console.log("Preloading past events...");
+
+        }
+
+        return {translateX: newTranslateXCandidate};
       }
-      return {translateX: newTranslateXCandidate};
     });
   }  
 
-  update() {    
+  update() {
     this.refs.canvas.width = this.refs.scrollWrapper.clientWidth * 3;
     this.refs.draggableDiv.style.width = this.refs.scrollWrapper.clientWidth * 3 + "px";
     this.setState({translateX: -this.refs.scrollWrapper.clientWidth});
-    this.calculateIntervals(-this.refs.scrollWrapper.clientWidth);
+    this.calculateIntervals();
     this.redrawCanvas();
   }
 
@@ -126,7 +161,7 @@ class TimelineComponent extends Component {
     this.timeDelimeters = List();
     
     let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
-    let canvasLeftDate = this.baseDate.minus(oneScreenWidthInDuration).plus(this.pxToDuration(translateX+this.refs.scrollWrapper.clientWidth));
+    let canvasLeftDate = this.baseDate.minus(oneScreenWidthInDuration);
     let leftToFirstDayStart = Interval.fromDateTimes(canvasLeftDate,canvasLeftDate.plus({ days: 1 }).startOf('day'));
     let firstLineX = this.durationToPx(leftToFirstDayStart.toDuration());
 
@@ -225,7 +260,12 @@ REFACTORING:
   css is not very good
   tooling is subpar - CRA has a good desc. on how to set up VSCode 
 TASK NEXT:
-  dynamic loading of events - mock?
+  dynamic loading of events:
+    create cache for events
+    render new events (filter out duplicates) and handle page switches
+    ask for new events etc. if resize happens
+    past
+    error handling if result doesn't arrive
   zoom
     buttons
   header
