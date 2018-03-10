@@ -9,14 +9,15 @@ import { css } from 'emotion'
 
 import { fromEvent } from 'rxjs/observable/fromEvent';
 
-import {DraggableCore} from 'react-draggable';
-import {List} from 'immutable';
+import { DraggableCore } from 'react-draggable';
+import { List } from 'immutable';
 
 import { DateTime } from 'luxon';
 import { Duration } from 'luxon';
 import { Interval } from 'luxon';
 
 import EventSocket from './eventSocket.js';
+import TLEventCache from './TLEventCache.js';
 
 class EventPreloadState extends Enum {}
 EventPreloadState.initEnum(['NOTLOADED', 'LOADING', 'LOADED', 'ERROR']);
@@ -26,10 +27,12 @@ class TimelineComponent extends Component {
     super(props);
     this.handleDrag = this.handleDrag.bind(this);
     this.handleResize = this.handleResize.bind(this);
+    this.onTimelineEventReceived = this.onTimelineEventReceived.bind(this);
 
     //States
     this.state = {
-      translateX: null      
+      translateX: null,
+      visibleEvents: []
     },    
     this.timeDelimeters = List();;
     this.baseDate = DateTime.local();
@@ -39,11 +42,8 @@ class TimelineComponent extends Component {
     this.futurePreloadState = EventPreloadState.NOTLOADED;
 
     this.eventSocket = new EventSocket();
-    this.eventSocket.eventSubject.subscribe((data)=>{
-      //TODO: unsubscribe
-      //TODO: check if received events are in the interval
-      console.log(data);
-    });    
+    this.TLEventCache = new TLEventCache();
+    this.onTimelineEventReceivedSubscription = this.eventSocket.eventSubject.subscribe(this.onTimelineEventReceived);
   }
 
   render() {
@@ -105,6 +105,7 @@ class TimelineComponent extends Component {
 
   componentWillUnmount() {
     this.resizeSubscription.unsubscribe();
+    this.onTimelineEventReceivedSubscription.unsubscribe();
   }
 
   handleResize(e) {
@@ -129,7 +130,7 @@ class TimelineComponent extends Component {
         let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
         let canvasLeftDate = this.baseDate.minus(this.pxToDuration(this.refs.scrollWrapper.clientWidth + newTranslateXCandidate));
         let canvaseRightDate = canvasLeftDate.plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration);
-        let futureCanvasRightDate = canvaseRightDate.plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration);
+        let futureCanvasRightDate = canvaseRightDate.plus(oneScreenWidthInDuration);
 
         if(newTranslateXCandidate< 1.5 * (-this.refs.scrollWrapper.clientWidth)){
           if(this.futurePreloadState == EventPreloadState.NOTLOADED){
@@ -192,6 +193,19 @@ class TimelineComponent extends Component {
       ctx.font = "20px Arial";
       ctx.fillText(deli.dateTime.toLocaleString(DateTime.DATE_SHORT),deli.deliX,21);
     }
+  }
+
+  onTimelineEventReceived(rawEvents){
+    let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
+    let startDate = this.baseDate.minus(oneScreenWidthInDuration);
+    let endDate = startDate.plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration);    
+    let changeSet = this.TLEventCache.merge(rawEvents,startDate,endDate);
+    if(!changeSet.isEmpty){
+      this.setState({visibleEvents: changeSet.filterChangedData(startDate,endDate)});
+      this.TLEventCache.tryPurge(startDate,endDate);
+    }
+
+    console.log(rawEvents);
   }
 
   getDraggableStyle(){
@@ -261,7 +275,6 @@ REFACTORING:
   tooling is subpar - CRA has a good desc. on how to set up VSCode 
 TASK NEXT:
   dynamic loading of events:
-    create cache for events
     render new events (filter out duplicates) and handle page switches
     ask for new events etc. if resize happens
     past
