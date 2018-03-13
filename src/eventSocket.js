@@ -28,8 +28,8 @@ export default class EventSocket {
 					return {
 						text: 'test',
 						type: 'interval',
-						startDT: evStartDate,
-						endDT: evEndDate,
+						startDate: evStartDate,
+						endDate: evEndDate,
 						row: chance.integer({min: 1, max: 10})
 					};
 				});

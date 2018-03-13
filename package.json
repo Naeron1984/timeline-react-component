@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "canvas-prebuilt": "^1.6.5-prerelease.1",
     "chance": "^1.0.13",
     "classnames": "^2.2.5",
     "emotion": "^9.0.2",

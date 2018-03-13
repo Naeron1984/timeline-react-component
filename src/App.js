@@ -17,7 +17,7 @@ import { Duration } from 'luxon';
 import { Interval } from 'luxon';
 
 import EventSocket from './eventSocket.js';
-import TLEventCache from './TLEventCache.js';
+import TlEventCache from './TlEventCache.js';
 
 class EventPreloadState extends Enum {}
 EventPreloadState.initEnum(['NOTLOADED', 'LOADING', 'LOADED', 'ERROR']);
@@ -42,7 +42,7 @@ class TimelineComponent extends Component {
     this.futurePreloadState = EventPreloadState.NOTLOADED;
 
     this.eventSocket = new EventSocket();
-    this.TLEventCache = new TLEventCache();
+    this.TlEventCache = new TlEventCache();
     this.onTimelineEventReceivedSubscription = this.eventSocket.eventSubject.subscribe(this.onTimelineEventReceived);
   }
 
@@ -122,7 +122,7 @@ class TimelineComponent extends Component {
         console.log("Switching board (future direction).");
 
         this.calculateIntervals();
-        this.redrawCanvas();        
+        this.redrawCanvas();
 
 
         return {translateX: -this.refs.scrollWrapper.clientWidth};
@@ -199,10 +199,9 @@ class TimelineComponent extends Component {
     let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
     let startDate = this.baseDate.minus(oneScreenWidthInDuration);
     let endDate = startDate.plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration);    
-    let changeSet = this.TLEventCache.merge(rawEvents,startDate,endDate);
-    if(!changeSet.isEmpty){
-      this.setState({visibleEvents: changeSet.filterChangedData(startDate,endDate)});
-      this.TLEventCache.tryPurge(startDate,endDate);
+    let changeSet = this.TlEventCache.merge(rawEvents,startDate,endDate);
+    if(!changeSet.isEmpty()){
+      this.setState({visibleEvents: changeSet});
     }
 
     console.log(rawEvents);
@@ -272,6 +271,9 @@ export default App;
 /*
 REFACTORING:
   css is not very good
+  type annotations
+  DI
+  check immutable coding style
   tooling is subpar - CRA has a good desc. on how to set up VSCode 
 TASK NEXT:
   dynamic loading of events:
@@ -279,6 +281,7 @@ TASK NEXT:
     ask for new events etc. if resize happens
     past
     error handling if result doesn't arrive
+    purge events on scroll/resize after or before
   zoom
     buttons
   header
