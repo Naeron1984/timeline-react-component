@@ -199,7 +199,8 @@ class TimelineComponent extends Component {
     let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
     let startDate = this.baseDate.minus(oneScreenWidthInDuration);
     let endDate = startDate.plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration);    
-    let changeSet = this.TlEventCache.merge(rawEvents,startDate,endDate);
+    this.TlEventCache.merge(rawEvents);
+    let changeSet = this.TlEventCache.getEvents(startDate,endDate);
     if(!changeSet.isEmpty()){
       this.setState({visibleEvents: changeSet});
     }

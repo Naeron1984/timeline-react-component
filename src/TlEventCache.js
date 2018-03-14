@@ -6,24 +6,18 @@ export default class TlEventCache {
 		this.eventMap = Map();
 	}
 
-	//merges everything but gives back only events in the interval
-	merge(rawEvents,startDate,endDate) {
-
+	merge(rawEvents) {
 		let newMap = rawEvents.reduce((map,value)=>map.set(value.guid, value), Map());
-		this.eventMap = this.eventMap.merge(newMap);
+		this.eventMap = this.eventMap.merge(newMap);		
+	}
 
+	getEvents(startDate,endDate) {
 		let eventsVisible = this.eventMap.filter(event=>{
 			return (event.startDate >= startDate && event.startDate <= endDate) ||
 						 (event.endDate <= endDate && event.endDate >= startDate) ||
 					   (event.endDate > endDate && event.startDate < startDate)
 		}).toSet();
 
-		console.log(eventsVisible);
-
 		return eventsVisible;
-	}
-
-	tryPurge(startDate,endDate) {
-
 	}
 }
