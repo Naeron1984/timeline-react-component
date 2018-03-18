@@ -8,6 +8,7 @@
     "classnames": "^2.2.5",
     "emotion": "^9.0.2",
     "enumify": "^1.0.4",
+    "guid": "0.0.12",
     "immutable": "^3.8.2",
     "luxon": "^0.5.3",
     "react": "^16.2.0",

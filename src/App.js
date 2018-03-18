@@ -3,7 +3,6 @@ import './App.css';
 import {Enum} from 'enumify';
 
 import React, { Component } from 'react';
-import classNames from 'classnames'
 
 import { css } from 'emotion'
 
@@ -22,6 +21,24 @@ import TlEventCache from './TlEventCache.js';
 class EventPreloadState extends Enum {}
 EventPreloadState.initEnum(['NOTLOADED', 'LOADING', 'LOADED', 'ERROR']);
 
+function EventBox(props) {
+
+  const liCSSCN = css({
+    position: 'absolute',
+    background: 'red',
+    left: px(props.leftPx),
+    top: px(props.event.row * 20),
+    width: px(props.rightPx - props.leftPx),
+    height: px(20),
+  });
+
+  return (
+    <li className={liCSSCN}>
+      {props.event.text}
+    </li>
+  )
+}
+
 class TimelineComponent extends Component {
   constructor(props) {
     super(props);
@@ -32,9 +49,9 @@ class TimelineComponent extends Component {
     //States
     this.state = {
       translateX: null,
-      visibleEvents: []
-    },    
-    this.timeDelimeters = List();;
+      visibleEvents: List()
+    };
+    this.timeDelimeters = List();
     this.baseDate = DateTime.local();
     this.daysToPixel = 200; //the zoom level
 
@@ -61,9 +78,9 @@ class TimelineComponent extends Component {
     });    
 
     const draggableDivCSSCN = css({
+      position: 'absolute',
       background: '#00000021',
-      width: px(500),
-      height: px(100),
+      height: px(150),
     });
 
     const scrollWrapperCSSCN = css({
@@ -82,11 +99,33 @@ class TimelineComponent extends Component {
             <DraggableCore axis="x" onDrag={this.handleDrag}>
               <div className={draggableDivCSSCN} style={this.getDraggableStyle()} ref="draggableDiv">
                 <canvas ref="canvas" width={200} height={300} style={{display: 'block', position: 'absolute'}}/>
+                <ul>
+                  {this.renderEventBoxes()}
+                </ul>
               </div>
             </DraggableCore>
           </div>
         </div>
     );
+  }
+
+  renderEventBoxes() {
+    if(!this.refs.scrollWrapper) return;
+
+    let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth - this.state.translateX);
+    let canvasLeftDate = this.baseDate.minus(oneScreenWidthInDuration);
+    let canvasRightDate = canvasLeftDate.plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration);
+    return this.state.visibleEvents.map((index,event)=>{
+
+      let startDate = event.startDate < canvasLeftDate ? canvasLeftDate : event.startDate;
+      let endDate = event.endDate > canvasRightDate ? canvasRightDate : event.endDate;
+
+      let toPx = (dtEnd) =>  this.durationToPx(Interval.fromDateTimes(canvasLeftDate,dtEnd).toDuration());
+
+      let eventStartPx = toPx(startDate);
+      let eventEndPx = toPx(endDate);
+      return (<EventBox event={event} leftPx={eventStartPx} rightPx={eventEndPx} key={event.guid}/>);
+    });
   }
 
   componentDidMount() {
@@ -108,14 +147,14 @@ class TimelineComponent extends Component {
     this.onTimelineEventReceivedSubscription.unsubscribe();
   }
 
-  handleResize(e) {
+  handleResize() {
     this.update();
   }
 
   handleDrag(e,data) {
     this.setState((prevState,props) => {
-      var newTranslateXCandidate = prevState.translateX + data.deltaX;
-      var duration = this.pxToDuration(data.deltaX);
+      let newTranslateXCandidate = prevState.translateX + data.deltaX;
+      let duration = this.pxToDuration(data.deltaX);
       this.baseDate = this.baseDate.minus(duration);
 
       if(newTranslateXCandidate< 2*(-this.refs.scrollWrapper.clientWidth) || newTranslateXCandidate > 0){
@@ -133,11 +172,11 @@ class TimelineComponent extends Component {
         let futureCanvasRightDate = canvaseRightDate.plus(oneScreenWidthInDuration);
 
         if(newTranslateXCandidate< 1.5 * (-this.refs.scrollWrapper.clientWidth)){
-          if(this.futurePreloadState == EventPreloadState.NOTLOADED){
+          // if(this.futurePreloadState === EventPreloadState.NOTLOADED){
             console.log("Preloading future events...");
             this.futurePreloadState = EventPreloadState.LOADING;
             this.eventSocket.askForIntervalFutureDuplex(canvaseRightDate, futureCanvasRightDate);
-          }
+          //}
         }
 
         if(newTranslateXCandidate > 0.5 * (this.refs.scrollWrapper.clientWidth)){
@@ -158,15 +197,13 @@ class TimelineComponent extends Component {
     this.redrawCanvas();
   }
 
-  calculateIntervals(translateX) {
+  calculateIntervals() {
     this.timeDelimeters = List();
     
     let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
     let canvasLeftDate = this.baseDate.minus(oneScreenWidthInDuration);
     let leftToFirstDayStart = Interval.fromDateTimes(canvasLeftDate,canvasLeftDate.plus({ days: 1 }).startOf('day'));
-    let firstLineX = this.durationToPx(leftToFirstDayStart.toDuration());
-
-    let sum = firstLineX;
+    let sum = this.durationToPx(leftToFirstDayStart.toDuration());
     let dateAct = canvasLeftDate.plus({ days: 1 }).startOf('day');
 
     while(true){
@@ -184,7 +221,7 @@ class TimelineComponent extends Component {
     const ctx = this.refs.canvas.getContext('2d');
     ctx.clearRect(0, 0, this.refs.canvas.width, this.refs.canvas.height);
     ctx.fillStyle='red';
-    for (var deli of this.timeDelimeters){
+    for (let deli of this.timeDelimeters){
       ctx.beginPath();
       ctx.moveTo(deli.deliX,0);
       ctx.lineTo(deli.deliX,350);
@@ -270,12 +307,17 @@ function millisecondsToDays(ms){
 export default App;
 
 /*
+BUG:
+  resize
+  preloading and states
 REFACTORING:
+  left side, right side, etc. abstraction
+  https://github.com/souporserious/react-measure
   css is not very good
   type annotations
-  DI
+  dependency injection
   check immutable coding style
-  tooling is subpar - CRA has a good desc. on how to set up VSCode 
+  tooling is sub-par - CRA has a good desc. on how to set up VSCode
 TASK NEXT:
   dynamic loading of events:
     render new events (filter out duplicates) and handle page switches

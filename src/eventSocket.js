@@ -4,6 +4,7 @@ import {Repeat} from 'immutable';
 import { DateTime } from 'luxon';
 import { Duration } from 'luxon';
 import { Interval } from 'luxon';
+import Guid from 'guid';
 
 export default class EventSocket {
 	constructor() {
@@ -30,7 +31,8 @@ export default class EventSocket {
 						type: 'interval',
 						startDate: evStartDate,
 						endDate: evEndDate,
-						row: chance.integer({min: 1, max: 10})
+						row: chance.integer({min: 1, max: 10}),
+						guid: Guid.raw()
 					};
 				});
 

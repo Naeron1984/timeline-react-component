@@ -1,7 +1,6 @@
-import { Set } from 'immutable';
 import { Map } from 'immutable';
 
-export default class TlEventCache {		
+export default class TlEventCache {
 	constructor(){
 		this.eventMap = Map();
 	}
@@ -12,12 +11,10 @@ export default class TlEventCache {
 	}
 
 	getEvents(startDate,endDate) {
-		let eventsVisible = this.eventMap.filter(event=>{
-			return (event.startDate >= startDate && event.startDate <= endDate) ||
-						 (event.endDate <= endDate && event.endDate >= startDate) ||
-					   (event.endDate > endDate && event.startDate < startDate)
-		}).toSet();
-
-		return eventsVisible;
+        return this.eventMap.filter(event => {
+            return (event.startDate >= startDate && event.startDate <= endDate) ||
+                (event.endDate <= endDate && event.endDate >= startDate) ||
+                (event.endDate > endDate && event.startDate < startDate)
+        }).toSet();
 	}
 }
