@@ -3,10 +3,9 @@ import './App.css';
 import {Enum} from 'enumify';
 
 import React, { Component } from 'react';
+import Measure from 'react-measure';
 
 import { css } from 'emotion'
-
-import { fromEvent } from 'rxjs/observable/fromEvent';
 
 import { DraggableCore } from 'react-draggable';
 import { List } from 'immutable';
@@ -42,25 +41,47 @@ function EventBox(props) {
 class TimelineComponent extends Component {
   constructor(props) {
     super(props);
-    this.handleDrag = this.handleDrag.bind(this);
-    this.handleResize = this.handleResize.bind(this);
-    this.onTimelineEventReceived = this.onTimelineEventReceived.bind(this);
 
-    //States
-    this.state = {
-      translateX: null,
-      visibleEvents: List()
-    };
-    this.timeDelimeters = List();
-    this.baseDate = DateTime.local();
-    this.daysToPixel = 200; //the zoom level
-
-    this.pastPreloadState = EventPreloadState.NOTLOADED;
-    this.futurePreloadState = EventPreloadState.NOTLOADED;
-
+    //TODO: refactor with DI
     this.eventSocket = new EventSocket();
     this.TlEventCache = new TlEventCache();
+
+    //Event handlers
+    this.handleDrag = this.handleDrag.bind(this);
+    this.onTimelineEventReceived = this.onTimelineEventReceived.bind(this);
     this.onTimelineEventReceivedSubscription = this.eventSocket.eventSubject.subscribe(this.onTimelineEventReceived);
+
+    //React States
+    this.state = {
+      translateX: null,
+      visibleEvents: List(),
+      scrollWrapperClient: {
+        width: 0,
+      }
+    };
+
+    //Normal States
+    this.canvas = null;
+    this.baseDate = DateTime.local();
+    this.daysToPixel = 200; //the zoom level
+    this.pastPreloadState = EventPreloadState.NOTLOADED;
+    this.futurePreloadState = EventPreloadState.NOTLOADED;    
+  }
+
+  renderEventBoxes() {
+    const canvasLeftDate = this.canvasLeftDate();
+    const canvasRightDate = this.canvasRightDate();
+    return this.state.visibleEvents.map((index,event)=>{
+
+      const startDate = event.startDate < canvasLeftDate ? canvasLeftDate : event.startDate;
+      const endDate = event.endDate > canvasRightDate ? canvasRightDate : event.endDate;
+
+      const toPx = (dtEnd) =>  this.durationToPx(Interval.fromDateTimes(canvasLeftDate,dtEnd).toDuration());
+
+      const eventStartPx = toPx(startDate);
+      const eventEndPx = toPx(endDate);
+      return (<EventBox event={event} leftPx={eventStartPx} rightPx={eventEndPx} key={event.guid}/>);
+    });
   }
 
   render() {
@@ -81,6 +102,7 @@ class TimelineComponent extends Component {
       position: 'absolute',
       background: '#00000021',
       height: px(150),
+      width: px(this.state.scrollWrapperClient.width * 3)
     });
 
     const scrollWrapperCSSCN = css({
@@ -95,91 +117,70 @@ class TimelineComponent extends Component {
           <div className={headerDivCSSCN}>
             Monday, Tuesday, etc.
           </div>
-          <div className={scrollWrapperCSSCN} ref="scrollWrapper">            
-            <DraggableCore axis="x" onDrag={this.handleDrag}>
-              <div className={draggableDivCSSCN} style={this.getDraggableStyle()} ref="draggableDiv">
-                <canvas ref="canvas" width={200} height={300} style={{display: 'block', position: 'absolute'}}/>
-                <ul>
-                  {this.renderEventBoxes()}
-                </ul>
+          <Measure client onResize={(contentRect) => {
+              this.setState({ 
+                scrollWrapperClient: contentRect.client,
+                translateX: -contentRect.client.width
+              });              
+            }}>
+            {({ measureRef }) =>
+              <div className={scrollWrapperCSSCN} ref={measureRef}>
+                <DraggableCore axis="x" onDrag={this.handleDrag}>
+                  <div className={draggableDivCSSCN} style={this.getDraggableStyle()}>
+                    <canvas ref={(canvas) => { this.canvas = canvas;}} width={this.state.scrollWrapperClient.width * 3} height={300} style={{display: 'block', position: 'absolute'}}/>
+                    <ul style={{listStyleType: 'none'}}>
+                      {this.renderEventBoxes()}
+                    </ul>
+                  </div>
+                </DraggableCore>
               </div>
-            </DraggableCore>
-          </div>
+            }
+          </Measure>
         </div>
     );
   }
 
-  renderEventBoxes() {
-    if(!this.refs.scrollWrapper) return;
-
-    let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth - this.state.translateX);
-    let canvasLeftDate = this.baseDate.minus(oneScreenWidthInDuration);
-    let canvasRightDate = canvasLeftDate.plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration);
-    return this.state.visibleEvents.map((index,event)=>{
-
-      let startDate = event.startDate < canvasLeftDate ? canvasLeftDate : event.startDate;
-      let endDate = event.endDate > canvasRightDate ? canvasRightDate : event.endDate;
-
-      let toPx = (dtEnd) =>  this.durationToPx(Interval.fromDateTimes(canvasLeftDate,dtEnd).toDuration());
-
-      let eventStartPx = toPx(startDate);
-      let eventEndPx = toPx(endDate);
-      return (<EventBox event={event} leftPx={eventStartPx} rightPx={eventEndPx} key={event.guid}/>);
-    });
-  }
-
   componentDidMount() {
-    this.update();
-
-    this.resizeSubscription = fromEvent(window, 'resize')      
-      .subscribe(this.handleResize);
-
-    //for now keep it here, and if performance is not good enough then call it before
-    let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
-    let canvasLeftDate = this.baseDate.minus(this.pxToDuration(this.refs.scrollWrapper.clientWidth));
-    let canvaseRightDate = canvasLeftDate.plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration);    
-    this.eventSocket.askForIntervalPastDuplex(canvasLeftDate, canvaseRightDate);
-    this.eventSocket.askForIntervalFutureDuplex(canvasLeftDate, canvaseRightDate);
+    const canvasLeftDate = this.canvasLeftDate();
+    const canvasRightDate = this.canvasRightDate();
+    this.eventSocket.askForIntervalPastDuplex(canvasLeftDate, canvasRightDate);
+    this.eventSocket.askForIntervalFutureDuplex(canvasLeftDate, canvasRightDate);
   }
 
   componentWillUnmount() {
-    this.resizeSubscription.unsubscribe();
     this.onTimelineEventReceivedSubscription.unsubscribe();
   }
 
-  handleResize() {
-    this.update();
+  componentDidUpdate(prevProps,prevState) {
+    if(this.trOneThird() === this.state.translateX){
+      //this isn't technically correct but the intent is to update after canvas was recycled
+      this.redrawCanvas();
+    }
   }
 
   handleDrag(e,data) {
     this.setState((prevState,props) => {
-      let newTranslateXCandidate = prevState.translateX + data.deltaX;
-      let duration = this.pxToDuration(data.deltaX);
+      const newTranslateXCandidate = prevState.translateX + data.deltaX;
+      const duration = this.pxToDuration(data.deltaX);
       this.baseDate = this.baseDate.minus(duration);
 
-      if(newTranslateXCandidate< 2*(-this.refs.scrollWrapper.clientWidth) || newTranslateXCandidate > 0){
-        console.log("Switching board (future direction).");
-
-        this.calculateIntervals();
-        this.redrawCanvas();
-
-
-        return {translateX: -this.refs.scrollWrapper.clientWidth};
+      if(newTranslateXCandidate< this.trTwoThird() || newTranslateXCandidate > this.trLeftEdge()){
+        console.log("<< Switching board >>");
+        return {translateX: -this.state.scrollWrapperClient.width};
       }else{
-        let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
-        let canvasLeftDate = this.baseDate.minus(this.pxToDuration(this.refs.scrollWrapper.clientWidth + newTranslateXCandidate));
-        let canvaseRightDate = canvasLeftDate.plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration);
-        let futureCanvasRightDate = canvaseRightDate.plus(oneScreenWidthInDuration);
+        const sw1 = this.oneScreenWidthInDuration();
+        const canvaseRightDate = this.canvasLeftDate().plus(sw1).plus(sw1).plus(sw1);
+        const futureCanvasRightDate = canvaseRightDate.plus(sw1).plus(sw1);
 
-        if(newTranslateXCandidate< 1.5 * (-this.refs.scrollWrapper.clientWidth)){
+        if(newTranslateXCandidate < 1.5 * this.trOneThird()){
           // if(this.futurePreloadState === EventPreloadState.NOTLOADED){
             console.log("Preloading future events...");
-            this.futurePreloadState = EventPreloadState.LOADING;
+            //this.futurePreloadState = EventPreloadState.LOADING;
             this.eventSocket.askForIntervalFutureDuplex(canvaseRightDate, futureCanvasRightDate);
           //}
         }
 
-        if(newTranslateXCandidate > 0.5 * (this.refs.scrollWrapper.clientWidth)){
+        if(newTranslateXCandidate < 0.5 * this.trOneThird()){
           //console.log("Preloading past events...");
 
         }
@@ -189,39 +190,28 @@ class TimelineComponent extends Component {
     });
   }  
 
-  update() {
-    this.refs.canvas.width = this.refs.scrollWrapper.clientWidth * 3;
-    this.refs.draggableDiv.style.width = this.refs.scrollWrapper.clientWidth * 3 + "px";
-    this.setState({translateX: -this.refs.scrollWrapper.clientWidth});
-    this.calculateIntervals();
-    this.redrawCanvas();
-  }
-
-  calculateIntervals() {
-    this.timeDelimeters = List();
-    
-    let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
-    let canvasLeftDate = this.baseDate.minus(oneScreenWidthInDuration);
-    let leftToFirstDayStart = Interval.fromDateTimes(canvasLeftDate,canvasLeftDate.plus({ days: 1 }).startOf('day'));
+  redrawCanvas() {
+    const canvasLeftDate = this.canvasLeftDate();
+    const firstVisibleDate = canvasLeftDate.plus({ days: 1 }).startOf('day');
+    const leftToFirstDayStart = Interval.fromDateTimes(canvasLeftDate,firstVisibleDate);
     let sum = this.durationToPx(leftToFirstDayStart.toDuration());
-    let dateAct = canvasLeftDate.plus({ days: 1 }).startOf('day');
+    let dateAct = firstVisibleDate;
+    let timeDelimeters = List();    
 
     while(true){
-      if(sum > this.refs.canvas.width){
+      if(sum > this.canvas.width){
         break;
       }
       
-      this.timeDelimeters = this.timeDelimeters.push({deliX: sum, dateTime: dateAct});
+      timeDelimeters = timeDelimeters.push({deliX: sum, dateTime: dateAct});
       sum+=this.daysToPixel;
       dateAct = dateAct.plus({ days: 1 });
     }
-  }
 
-  redrawCanvas() {
-    const ctx = this.refs.canvas.getContext('2d');
-    ctx.clearRect(0, 0, this.refs.canvas.width, this.refs.canvas.height);
+    const ctx = this.canvas.getContext('2d');
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.fillStyle='red';
-    for (let deli of this.timeDelimeters){
+    for (let deli of timeDelimeters){
       ctx.beginPath();
       ctx.moveTo(deli.deliX,0);
       ctx.lineTo(deli.deliX,350);
@@ -232,17 +222,39 @@ class TimelineComponent extends Component {
     }
   }
 
-  onTimelineEventReceived(rawEvents){
-    let oneScreenWidthInDuration = this.pxToDuration(this.refs.scrollWrapper.clientWidth);
-    let startDate = this.baseDate.minus(oneScreenWidthInDuration);
-    let endDate = startDate.plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration).plus(oneScreenWidthInDuration);    
+  onTimelineEventReceived(rawEvents){    
     this.TlEventCache.merge(rawEvents);
-    let changeSet = this.TlEventCache.getEvents(startDate,endDate);
+    let changeSet = this.TlEventCache.getEvents(this.canvasLeftDate(),this.canvasRightDate());
     if(!changeSet.isEmpty()){
       this.setState({visibleEvents: changeSet});
     }
 
     console.log(rawEvents);
+  }
+
+  trLeftEdge() {
+    return 0;
+  }
+
+  trOneThird() {
+    return -this.state.scrollWrapperClient.width;
+  }
+
+  trTwoThird() {
+    return 2*(-this.state.scrollWrapperClient.width);
+  }
+
+  canvasLeftDate(){
+    return this.baseDate.minus(this.pxToDuration(this.state.scrollWrapperClient.width));
+  }
+
+  canvasRightDate() {
+    const sw1 = this.oneScreenWidthInDuration();
+    return this.canvasLeftDate().plus(sw1).plus(sw1).plus(sw1);
+  }
+
+  oneScreenWidthInDuration(){
+    return this.pxToDuration(this.state.scrollWrapperClient.width);
   }
 
   getDraggableStyle(){
@@ -307,12 +319,15 @@ function millisecondsToDays(ms){
 export default App;
 
 /*
-BUG:
-  resize
-  preloading and states
+
+NEXT:
+  new state flags for
+    -freshly loaded
+    -freshly resized
+    -freshly recycled
+    Any simpler alternative???
+
 REFACTORING:
-  left side, right side, etc. abstraction
-  https://github.com/souporserious/react-measure
   css is not very good
   type annotations
   dependency injection
