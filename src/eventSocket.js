@@ -1,7 +1,6 @@
 import { Subject } from 'rxjs/Subject';
 import Chance from 'chance';
 import {Repeat} from 'immutable';
-import { DateTime } from 'luxon';
 import { Duration } from 'luxon';
 import { Interval } from 'luxon';
 import Guid from 'guid';

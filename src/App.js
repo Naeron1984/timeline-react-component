@@ -24,7 +24,7 @@ function EventBox(props) {
 
   const liCSSCN = css({
     position: 'absolute',
-    background: 'red',
+    background: 'lightgreen',
     left: px(props.leftPx),
     top: px(props.event.row * 20),
     width: px(props.rightPx - props.leftPx),
@@ -33,7 +33,7 @@ function EventBox(props) {
 
   return (
     <li className={liCSSCN}>
-      {props.event.text}
+      {props.event.startDate.toString()} -> {props.event.endDate.toString()} : {props.event.text}
     </li>
   )
 }
@@ -61,26 +61,34 @@ class TimelineComponent extends Component {
     };
 
     //Normal States
+    this.firstValidInit = false;
     this.canvas = null;
     this.baseDate = DateTime.local();
+    this.canvasLeftDate = DateTime.local();
     this.daysToPixel = 200; //the zoom level
     this.pastPreloadState = EventPreloadState.NOTLOADED;
-    this.futurePreloadState = EventPreloadState.NOTLOADED;    
+    this.futurePreloadState = EventPreloadState.NOTLOADED;
   }
 
   renderEventBoxes() {
-    const canvasLeftDate = this.canvasLeftDate();
     const canvasRightDate = this.canvasRightDate();
-    return this.state.visibleEvents.map((index,event)=>{
+    return this.state.visibleEvents.map((event)=>{
 
-      const startDate = event.startDate < canvasLeftDate ? canvasLeftDate : event.startDate;
+      const startDate = event.startDate < this.canvasLeftDate ? this.canvasLeftDate : event.startDate;
       const endDate = event.endDate > canvasRightDate ? canvasRightDate : event.endDate;
 
-      const toPx = (dtEnd) =>  this.durationToPx(Interval.fromDateTimes(canvasLeftDate,dtEnd).toDuration());
+      const toPx = (dtEnd) =>  this.durationToPx(Interval.fromDateTimes(this.canvasLeftDate,dtEnd).toDuration());
 
       const eventStartPx = toPx(startDate);
       const eventEndPx = toPx(endDate);
-      return (<EventBox event={event} leftPx={eventStartPx} rightPx={eventEndPx} key={event.guid}/>);
+      return (<EventBox 
+        event={event} 
+        leftPx={eventStartPx} 
+        rightPx={eventEndPx} 
+        key={event.guid}
+        startDate={event.startDate}
+        endDate={event.endDate}
+      />);
     });
   }
 
@@ -118,6 +126,7 @@ class TimelineComponent extends Component {
             Monday, Tuesday, etc.
           </div>
           <Measure client onResize={(contentRect) => {
+              this.firstValidInit = true;
               this.setState({ 
                 scrollWrapperClient: contentRect.client,
                 translateX: -contentRect.client.width
@@ -128,9 +137,9 @@ class TimelineComponent extends Component {
                 <DraggableCore axis="x" onDrag={this.handleDrag}>
                   <div className={draggableDivCSSCN} style={this.getDraggableStyle()}>
                     <canvas ref={(canvas) => { this.canvas = canvas;}} width={this.state.scrollWrapperClient.width * 3} height={300} style={{display: 'block', position: 'absolute'}}/>
-                    <ul style={{listStyleType: 'none'}}>
+                    <ol style={{listStyleType: 'none'}}>
                       {this.renderEventBoxes()}
-                    </ul>
+                    </ol>
                   </div>
                 </DraggableCore>
               </div>
@@ -140,13 +149,6 @@ class TimelineComponent extends Component {
     );
   }
 
-  componentDidMount() {
-    const canvasLeftDate = this.canvasLeftDate();
-    const canvasRightDate = this.canvasRightDate();
-    this.eventSocket.askForIntervalPastDuplex(canvasLeftDate, canvasRightDate);
-    this.eventSocket.askForIntervalFutureDuplex(canvasLeftDate, canvasRightDate);
-  }
-
   componentWillUnmount() {
     this.onTimelineEventReceivedSubscription.unsubscribe();
   }
@@ -154,7 +156,16 @@ class TimelineComponent extends Component {
   componentDidUpdate(prevProps,prevState) {
     if(this.trOneThird() === this.state.translateX){
       //this isn't technically correct but the intent is to update after canvas was recycled
+      this.updateCanvasLeftDate();
       this.redrawCanvas();
+    }
+
+    if(this.firstValidInit){
+      this.firstValidInit = false;
+      this.updateCanvasLeftDate();
+      const canvasRightDate = this.canvasRightDate();
+      this.eventSocket.askForIntervalPastDuplex(this.canvasLeftDate, canvasRightDate);
+      this.eventSocket.askForIntervalFutureDuplex(this.canvasLeftDate, canvasRightDate);      
     }
   }
 
@@ -169,7 +180,7 @@ class TimelineComponent extends Component {
         return {translateX: -this.state.scrollWrapperClient.width};
       }else{
         const sw1 = this.oneScreenWidthInDuration();
-        const canvaseRightDate = this.canvasLeftDate().plus(sw1).plus(sw1).plus(sw1);
+        const canvaseRightDate = this.canvasLeftDate.plus(sw1).plus(sw1).plus(sw1);
         const futureCanvasRightDate = canvaseRightDate.plus(sw1).plus(sw1);
 
         if(newTranslateXCandidate < 1.5 * this.trOneThird()){
@@ -191,9 +202,8 @@ class TimelineComponent extends Component {
   }  
 
   redrawCanvas() {
-    const canvasLeftDate = this.canvasLeftDate();
-    const firstVisibleDate = canvasLeftDate.plus({ days: 1 }).startOf('day');
-    const leftToFirstDayStart = Interval.fromDateTimes(canvasLeftDate,firstVisibleDate);
+    const firstVisibleDate = this.canvasLeftDate.plus({ days: 1 }).startOf('day');
+    const leftToFirstDayStart = Interval.fromDateTimes(this.canvasLeftDate,firstVisibleDate);
     let sum = this.durationToPx(leftToFirstDayStart.toDuration());
     let dateAct = firstVisibleDate;
     let timeDelimeters = List();    
@@ -224,13 +234,17 @@ class TimelineComponent extends Component {
 
   onTimelineEventReceived(rawEvents){    
     this.TlEventCache.merge(rawEvents);
-    let changeSet = this.TlEventCache.getEvents(this.canvasLeftDate(),this.canvasRightDate());
+    let changeSet = this.TlEventCache.getEvents(this.canvasLeftDate,this.canvasRightDate());
     if(!changeSet.isEmpty()){
       this.setState({visibleEvents: changeSet});
     }
 
     console.log(rawEvents);
   }
+
+  updateCanvasLeftDate(){
+    this.canvasLeftDate = this.baseDate.minus(this.pxToDuration(this.state.scrollWrapperClient.width));
+  }  
 
   trLeftEdge() {
     return 0;
@@ -242,15 +256,11 @@ class TimelineComponent extends Component {
 
   trTwoThird() {
     return 2*(-this.state.scrollWrapperClient.width);
-  }
-
-  canvasLeftDate(){
-    return this.baseDate.minus(this.pxToDuration(this.state.scrollWrapperClient.width));
-  }
+  }  
 
   canvasRightDate() {
     const sw1 = this.oneScreenWidthInDuration();
-    return this.canvasLeftDate().plus(sw1).plus(sw1).plus(sw1);
+    return this.canvasLeftDate.plus(sw1).plus(sw1).plus(sw1);
   }
 
   oneScreenWidthInDuration(){
