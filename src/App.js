@@ -52,8 +52,7 @@ class TimelineComponent extends Component {
     this.onTimelineEventReceivedSubscription = this.eventSocket.eventSubject.subscribe(this.onTimelineEventReceived);
 
     //React States
-    this.state = {
-      translateX: null,
+    this.state = {      
       visibleEvents: List(),
       scrollWrapperClient: {
         width: 0,
@@ -63,6 +62,8 @@ class TimelineComponent extends Component {
     //Normal States
     this.firstValidInit = false;
     this.canvas = null;
+    this.draggableDiv = null;
+    this.translateX = 0;
     this.baseDate = DateTime.local();
     this.canvasLeftDate = DateTime.local();
     this.daysToPixel = 200; //the zoom level
@@ -127,15 +128,15 @@ class TimelineComponent extends Component {
           </div>
           <Measure client onResize={(contentRect) => {
               this.firstValidInit = true;
+              this.translateX = -contentRect.client.width;
               this.setState({ 
-                scrollWrapperClient: contentRect.client,
-                translateX: -contentRect.client.width
+                scrollWrapperClient: contentRect.client,                
               });              
             }}>
             {({ measureRef }) =>
               <div className={scrollWrapperCSSCN} ref={measureRef}>
                 <DraggableCore axis="x" onDrag={this.handleDrag}>
-                  <div className={draggableDivCSSCN} style={this.getDraggableStyle()}>
+                  <div className={draggableDivCSSCN} ref={(div) => {this.draggableDiv = div;}} style={this.getDraggableStyle()}>
                     <canvas ref={(canvas) => { this.canvas = canvas;}} width={this.state.scrollWrapperClient.width * 3} height={300} style={{display: 'block', position: 'absolute'}}/>
                     <ol style={{listStyleType: 'none'}}>
                       {this.renderEventBoxes()}
@@ -154,7 +155,7 @@ class TimelineComponent extends Component {
   }
 
   componentDidUpdate(prevProps,prevState) {
-    if(this.trOneThird() === this.state.translateX){
+    if(this.trOneThird() === this.translateX){
       //this isn't technically correct but the intent is to update after canvas was recycled
       this.updateCanvasLeftDate();
       this.redrawCanvas();
@@ -170,35 +171,36 @@ class TimelineComponent extends Component {
   }
 
   handleDrag(e,data) {
-    this.setState((prevState,props) => {
-      const newTranslateXCandidate = prevState.translateX + data.deltaX;
-      const duration = this.pxToDuration(data.deltaX);
-      this.baseDate = this.baseDate.minus(duration);
+    
+    const newTranslateXCandidate = this.translateX + data.deltaX;
+    const duration = this.pxToDuration(data.deltaX);
+    this.baseDate = this.baseDate.minus(duration);
 
-      if(newTranslateXCandidate< this.trTwoThird() || newTranslateXCandidate > this.trLeftEdge()){
-        console.log("<< Switching board >>");
-        return {translateX: -this.state.scrollWrapperClient.width};
-      }else{
-        const sw1 = this.oneScreenWidthInDuration();
-        const canvaseRightDate = this.canvasLeftDate.plus(sw1).plus(sw1).plus(sw1);
-        const futureCanvasRightDate = canvaseRightDate.plus(sw1).plus(sw1);
+    if(newTranslateXCandidate< this.trTwoThird() || newTranslateXCandidate > this.trLeftEdge()){
+      console.log("<< Switching board >>");
+      this.translateX = -this.state.scrollWrapperClient.width;
+    }else{
+      const sw1 = this.oneScreenWidthInDuration();
+      const canvaseRightDate = this.canvasLeftDate.plus(sw1).plus(sw1).plus(sw1);
+      const futureCanvasRightDate = canvaseRightDate.plus(sw1).plus(sw1);
 
-        if(newTranslateXCandidate < 1.5 * this.trOneThird()){
-          // if(this.futurePreloadState === EventPreloadState.NOTLOADED){
-            console.log("Preloading future events...");
-            //this.futurePreloadState = EventPreloadState.LOADING;
-            this.eventSocket.askForIntervalFutureDuplex(canvaseRightDate, futureCanvasRightDate);
-          //}
-        }
-
-        if(newTranslateXCandidate < 0.5 * this.trOneThird()){
-          //console.log("Preloading past events...");
-
-        }
-
-        return {translateX: newTranslateXCandidate};
+      if(newTranslateXCandidate < 1.5 * this.trOneThird()){
+        // if(this.futurePreloadState === EventPreloadState.NOTLOADED){
+          console.log("Preloading future events...");
+          //this.futurePreloadState = EventPreloadState.LOADING;
+          this.eventSocket.askForIntervalFutureDuplex(canvaseRightDate, futureCanvasRightDate);
+        //}
       }
-    });
+
+      if(newTranslateXCandidate < 0.5 * this.trOneThird()){
+        //console.log("Preloading past events...");
+
+      }
+
+      this.translateX = newTranslateXCandidate;
+    }
+    
+    this.draggableDiv.style.transform = translate(this.translateX,0);
   }  
 
   redrawCanvas() {
@@ -268,7 +270,7 @@ class TimelineComponent extends Component {
   }
 
   getDraggableStyle(){
-    return { transform: translate(this.state.translateX,0) };
+    return { transform: translate(this.translateX,0) };
   }
 
   durationToPx(duration){
